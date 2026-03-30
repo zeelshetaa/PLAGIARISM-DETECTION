@@ -30,6 +30,10 @@ BASE_DIR: str = os.path.dirname(os.path.abspath(__file__))
 REFERENCE_DIR: str = os.path.join(BASE_DIR, "dataset", "reference")
 UPLOADED_DIR: str = os.path.join(BASE_DIR, "dataset", "uploaded")
 
+# BURT Embeddings
+from features.bert_embeddings import BertEmbedder
+from similarity.semantic_similarity import compute_semantic_similarity
+
 
 def load_reference_documents() -> tuple[list[str], list[str]]:
     """
@@ -116,34 +120,34 @@ def run_pipeline() -> None:
     print("\n[2/6] Loading uploaded document …")
     uploaded_text, uploaded_filename = load_uploaded_document()
 
-    # ── Step 4: TF-IDF feature extraction ─────────────────────────────────
-    print("\n[3/6] Fitting TF-IDF vectorizer on reference corpus …")
-    fit_vectorizer(ref_docs)
+    # ── Step 4: BERT feature extraction ─────────────────────────────────
+    print("[3/6] Loading BERT embedder...")
+    bert = BertEmbedder()
 
-    print("[4/6] Transforming documents …")
-    # Transform reference docs
-    ref_vectors = transform_documents(ref_docs)
-    # Transform uploaded doc (wrap in list, then slice row 0)
-    uploaded_vector = transform_documents([uploaded_text])
+    print("[4/6] Generating embeddings...")
+    reference_embeddings = bert.encode_documents(ref_docs)
+    uploaded_embedding = bert.encode_single(uploaded_text)
 
     # ── Step 5: Cosine similarity ──────────────────────────────────────────
-    print("\n[5/6] Computing cosine similarity …")
-    similarity_score, best_idx = compute_cosine_similarity(
-        uploaded_vector, ref_vectors
+    print("[5/6] Computing semantic similarity...")
+    similarity_scores = compute_semantic_similarity(
+        uploaded_embedding,
+        reference_embeddings
     )
-    matched_filename = ref_filenames[best_idx]
-    print(f"  Best match : {matched_filename}  (score = {similarity_score:.4f})")
-
+    best_match_index = similarity_scores.argmax()
+    best_score = similarity_scores[best_match_index]
+    print("Best Match:", ref_filenames[best_match_index])
+    print("Similarity Score:", best_score)
     # ── Step 6 & 7: Train classifier + classify ────────────────────────────
     print("\n[6/6] Classifying result …")
     train_model(threshold=0.5)
-    classification = predict(similarity_score)
+    classification = predict(best_score)
 
     # ── Step 7: Generate & print report ───────────────────────────────────
     report = generate_report(
         uploaded_filename=uploaded_filename,
-        reference_filename=matched_filename,
-        similarity_score=similarity_score,
+        reference_filename=ref_filenames[best_match_index],
+        similarity_score=best_score,
         classification=classification,
     )
     print_report(report)
